@@ -19,9 +19,9 @@ function makeCtx(apiProxy) {
   }
 }
 
-test("host plugin declares the official name and apiProxy injection", () => {
+test("host plugin declares the official name and sessionController injection", () => {
   assert.equal(name, "dsh-api")
-  assert.deepEqual(inject, ["apiProxy", "sessionController"])
+  assert.deepEqual(inject, ["sessionController"])
 })
 
 test("apply with enabled=false installs the lifecycle effect and starts no server", async () => {

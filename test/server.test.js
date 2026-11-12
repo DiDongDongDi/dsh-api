@@ -229,6 +229,57 @@ test("sendRpc guards a missing result with HTTP 200 and internal error", async (
   assert.deepEqual(unwrap(result), { ok: false, error: { code: "internal", message: "missing rpc result" } })
 })
 
+test("sessionController create, prompt, and transcript do not need apiProxy", async (t) => {
+  let renamed = null
+  let prompted = null
+  const sessionController = {
+    create: async (request) => {
+      assert.equal(request.title, undefined)
+      assert.equal(request.cwd, "/tmp")
+      return { sessionId: "s9" }
+    },
+    rename: async (request) => { renamed = request; return { title: request.title, seq: 1 } },
+    prompt: async (request) => { prompted = request; return { accepted: true } },
+    events: async (request) => ({
+      cursor: 1,
+      hasMore: false,
+      records: [{
+        type: "event",
+        event: { type: "user/message", seq: 1, data: { message: { content: [{ type: "text", text: "问题" }] } } }
+      }]
+    }),
+    state: async () => ({ cursor: 1, active: true, running: true, queue: [], pendingInput: [] })
+  }
+  const server = createDshApiServer({ api: undefined, fetch: fakeFetch, token: "secret-token", port: 0, sessionController })
+  server.listen(0, "127.0.0.1")
+  t.after(() => server.close())
+  await once(server, "listening")
+  const address = server.address()
+  const created = await fetch(`http://127.0.0.1:${address.port}/api/sessions`, {
+    method: "POST",
+    headers: { authorization: "Bearer secret-token", "content-type": "application/json" },
+    body: JSON.stringify({ title: "告警", cwd: "/tmp" })
+  })
+  assert.equal(created.status, 200)
+  assert.equal((await created.json()).sessionId, "s9")
+  assert.equal(renamed.sessionId, "s9")
+  assert.equal(renamed.title, "告警")
+  const promptedResponse = await fetch(`http://127.0.0.1:${address.port}/api/sessions/s9/prompt`, {
+    method: "POST",
+    headers: { authorization: "Bearer secret-token", "content-type": "application/json" },
+    body: JSON.stringify({ content: [{ type: "text", text: "hello" }], mode: "queue" })
+  })
+  assert.equal(promptedResponse.status, 200)
+  assert.equal(prompted.sessionId, "s9")
+  assert.equal(prompted.mode, "queue")
+  assert.equal(typeof prompted.requestId, "string")
+  const transcript = await request(server, "/api/sessions/s9/transcript", "secret-token")
+  const body = unwrap(transcript)
+  assert.equal(body.ok, true)
+  assert.equal(body.running, true)
+  assert.equal(body.messages[0].text, "问题")
+})
+
 test("sendRpc error branch returns official error with HTTP 200", async (t) => {
   const api = {
     sessions: { list: async () => ({ rpcId: "rpc-1", result: { ok: false, error: { code: "session-missing", message: "no such session" } } }) },
