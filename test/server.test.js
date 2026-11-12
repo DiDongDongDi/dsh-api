@@ -130,10 +130,14 @@ test("history returns official value and path sessionId wins over query param", 
   assert.equal(seen.payload.cursor, "abc")
 })
 
-test("create maps request body into official create payload", async (t) => {
+test("create strips title and renames the new session", async (t) => {
   let seen = null
+  let renamed = null
   const api = {
-    sessions: { create: async (request) => { seen = request; return { rpcId: "rpc-1", result: { ok: true, value: { sessionId: "s9" } } } } },
+    sessions: {
+      create: async (request) => { seen = request; return { rpcId: "rpc-1", result: { ok: true, value: { sessionId: "s9" } } } },
+      rename: async (request) => { renamed = request; return { rpcId: "rpc-2", result: { ok: true, value: { title: request.payload.title } } } }
+    },
     events: { mux: async function* () {} }
   }
   const server = createDshApiServer({ api, fetch: fakeFetch, token: "secret-token", port: 0 })
@@ -144,11 +148,51 @@ test("create maps request body into official create payload", async (t) => {
   const response = await fetch(`http://127.0.0.1:${address.port}/api/sessions`, {
     method: "POST",
     headers: { authorization: "Bearer secret-token", "content-type": "application/json" },
-    body: JSON.stringify({ title: "new session" })
+    body: JSON.stringify({ title: "new session", cwd: "/tmp" })
   })
   assert.equal(response.status, 200)
   assert.equal(unwrap({ text: await response.text() }).sessionId, "s9")
-  assert.deepEqual(seen.payload, { title: "new session" })
+  assert.deepEqual(seen.payload, { cwd: "/tmp" })
+  assert.equal(renamed.payload.sessionId, "s9")
+  assert.equal(renamed.payload.title, "new session")
+})
+
+test("transcript returns running and the in-progress assistant text", async (t) => {
+  const { createLiveStore } = await import("../lib/transcript.js")
+  const live = createLiveStore()
+  live.absorbMux({
+    sessionId: "s1",
+    type: "chunk",
+    chunk: { type: "text-delta", text: "还在写" }
+  })
+  const api = {
+    sessions: {
+      history: async () => ({
+        rpcId: "rpc-1",
+        result: {
+          ok: true,
+          value: {
+            records: [{
+              type: "event",
+              event: { type: "user/message", seq: 1, data: { message: { content: [{ type: "text", text: "问题" }] } } }
+            }]
+          }
+        }
+      })
+    },
+    events: { mux: async function* () {} }
+  }
+  const server = createDshApiServer({ api, fetch: fakeFetch, token: "secret-token", port: 0, live })
+  server.listen(0, "127.0.0.1")
+  t.after(() => server.close())
+  await once(server, "listening")
+  const result = await request(server, "/api/sessions/s1/transcript", "secret-token")
+  assert.equal(result.status, 200)
+  const body = unwrap(result)
+  assert.equal(body.running, true)
+  assert.equal(body.messages[0].text, "问题")
+  assert.equal(body.messages[1].text, "还在写")
+  assert.equal(body.messages[1].streaming, true)
 })
 
 test("cancel maps sessionId from path", async (t) => {
