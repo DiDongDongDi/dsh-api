@@ -8,12 +8,13 @@ const source = await readFile(new URL("../lib/client.js", import.meta.url), "utf
 test("registers a DSH settings section named dsh-api", () => {
   const registrations = []
   let loadedId = ""
+  let plugin = null
   const window = {
     __ModuleLoader__: { load(def) {
       loadedId = def.id
-      const plugin = def.factory((id) => {
+      plugin = def.factory((id) => {
         if (id === "react") return { useSyncExternalStore: () => ({ enabled: true, port: 4777 }) }
-        if (id === "@deepseek-ai/dsh-client-runtime/client") return { defineStore: (def) => ({ getState: def.init, actions: def.actions }) }
+        if (id === "@deepseek-ai/dsh-client-store") return { defineStore: (def) => ({ getState: def.init, actions: def.actions }) }
         return {}
       })
       plugin.apply({
@@ -26,5 +27,7 @@ test("registers a DSH settings section named dsh-api", () => {
   assert.equal(loadedId, "@kelemiao/dsh-api")
   assert.equal(registrations[0].id, "dsh-api")
   assert.equal(registrations[0].name, "settings.section")
-  assert.match(source, /"dsh-api"/)
+  assert.deepEqual([...plugin.inject], ["slots", "configForms"])
+  assert.match(source, /require\("@deepseek-ai\/dsh-client-store"\)/)
+  assert.doesNotMatch(source, /dsh-client-runtime/)
 })
