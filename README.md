@@ -37,6 +37,8 @@ Settings live in the GUI Settings page under `dsh-api` and apply immediately.
 | GET    | `/health`                 | Public health check.                           |
 | GET    | `/api/sessions`           | List sessions: `{ items: SessionSummary[] }`.  |
 | POST   | `/api/sessions`           | Create session; body `{ cwd?, workspaceId?, agentPreset?, title? }`. `title` is applied with rename after create. |
+| PATCH  | `/api/sessions/:id`       | Rename session; body `{ title }`.              |
+| POST   | `/api/sessions/:id/archive` | Archive session via workspaceRegistry.       |
 | GET    | `/api/sessions/:id/history` | Read history; query `beforeSeq?`, `maxMessages?`. |
 | GET    | `/api/sessions/:id/transcript` | Poll `{ running, messages }`, including in-progress assistant text. |
 | POST   | `/api/sessions/:id/prompt` | Send prompt; body `{ content, mode? }`.        |
